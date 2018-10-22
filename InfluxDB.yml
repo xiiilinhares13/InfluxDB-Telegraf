@@ -1,0 +1,94 @@
+---
+- hosts: master 
+  tasks:
+    - name: "Criar pasta InfluxDB"
+      file:
+        path: "/etc/InfluxDB" 
+        state: directory
+      become: yes
+      become_method: sudo
+  
+    - name: "Executar comando docker p/ criar arquivo influxdb.conf"
+      shell: docker run --rm influxdb influxd config > influxdb.conf
+      args:
+        chdir: /etc/InfluxDB
+      become: yes
+      become_method: sudo
+
+    - name: "Docker container Run"
+      shell: docker run -d -p 8086:8086 -v $PWD/influxdb.conf:/etc/influxdb/influxdb.conf:ro influxdb -config /etc/influxdb/influxdb.conf 
+      args:
+        chdir: /etc/InfluxDB
+      become: yes
+      become_method: sudo
+
+    - name: "Download the package for ubuntu"
+      get_url:
+        url: http://dl.influxdata.com/telegraf/releases/telegraf_1.8.2-1_amd64.deb
+        dest: /tmp/telegraf_1.8.2-1_amd64.deb
+      when: ansible_os_family == "Debian"
+      become: yes
+      become_method: sudo
+
+    - name: "Install the package for ubuntu"
+      apt:
+        deb: /tmp/telegraf_1.8.2-1_amd64.deb
+      when: ansible_os_family == "Debian"
+      become: yes
+      become_method: sudo
+
+    - name: "Download the package for Centos"
+      get_url:
+        url: http://dl.influxdata.com/telegraf/releases/telegraf-1.8.2-1.x86_64.rpm
+        dest: /tmp/telegraf-1.8.2-1.x86_64.rpm
+      when: ansible_os_family == "RedHat"
+      become: yes
+      become_method: sudo
+
+    - name: "Install the package for Centos"
+      command: yum localinstall -y /tmp/telegraf-1.8.2-1.x86_64.rpm
+      changed_when: False
+      when: ansible_os_family == "RedHat"
+      become: yes
+      become_method: sudo
+
+    - name: "iniciando telegraf"
+      shell: systemctl start telegraf
+      become: yes
+      become_method: sudo
+
+    - name: "Verificando se o arquivo existe"
+      stat:
+        path: /etc/telegraf/telegraf.conf
+      register: stat_result
+
+    - name: "Movendo telegraf config"
+      command: mv /etc/telegraf/telegraf.conf /etc/telegraf/telegraf.conf.orig
+      when: stat_result.stat.exists == True  
+      become: yes
+      become_method: sudo      
+
+    - name: "Colocando config no novo arquivo"
+      copy:
+        src: ../conf/telegraf.conf
+        dest: /etc/telegraf/
+      become: yes
+      become_method: sudo
+
+    - name: "Substituindo linha Hostname pelo nome desejado"
+      replace:
+        dest: /etc/telegraf/telegraf.conf
+        regexp: 'hostname = "host"'
+        replace: 'hostname = "{{ host_var }}"'
+      become: yes
+      become_method: sudo
+
+    - name: "restart serviço telegraf"
+      shell: service telegraf restart
+      become: yes
+      become_method: sudo
+
+    - name: "Testanto configuração"
+      shell: telegraf -test -config /etc/telegraf/telegraf.conf
+      become: yes
+      become_method: sudo
